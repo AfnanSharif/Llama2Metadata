@@ -1,0 +1,13 @@
+streamlit>=1.36,<2
+python-dotenv>=1.0,<2
+numpy>=1.26,<3
+faiss-cpu>=1.8,<2
+sentence-transformers>=3,<4
+transformers>=4.44,<5
+accelerate>=0.33,<2
+torch>=2.2,<3
+bitsandbytes>=0.43,<1
+pypdf>=4.3,<6
+python-docx>=1.1,<2
+boto3>=1.35,<2
+tika>=2.6,<3

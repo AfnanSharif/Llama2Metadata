@@ -1,0 +1,4 @@
+app:
+  name: 'Service'
+  version: '1.0.0'
+  debug: false

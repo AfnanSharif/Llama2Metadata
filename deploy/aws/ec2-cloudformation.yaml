@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Atlas Metadata Studio GPU-ready EC2 host with Textract and Session Manager access
+
+Parameters:
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Ubuntu 22.04 or AWS Deep Learning GPU AMI id for this region
+  InstanceType:
+    Type: String
+    Default: g5.xlarge
+    AllowedValues: [g4dn.xlarge, g5.xlarge, g5.2xlarge]
+  RepositoryUrl:
+    Type: String
+    Description: HTTPS Git clone URL for this repository
+  RepositoryBranch:
+    Type: String
+    Default: main
+  ProjectPath:
+    Type: String
+    Default: LLaMA2 Project for Metadata Generation
+  AllowedCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    Description: CIDR allowed to reach Streamlit port 8501; replace deliberately
+  RootVolumeGiB:
+    Type: Number
+    Default: 150
+    MinValue: 80
+
+Resources:
+  AtlasRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: AtlasTextract
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: textract:DetectDocumentText
+                Resource: '*'
+
+  AtlasProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref AtlasRole]
+
+  AtlasSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Restricted Streamlit ingress for Atlas Metadata Studio
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8501
+          ToPort: 8501
+          CidrIp: !Ref AllowedCidr
+
+  AtlasInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref AtlasProfile
+      SecurityGroupIds: [!GetAtt AtlasSecurityGroup.GroupId]
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeGiB
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: atlas-metadata-studio
+      UserData:
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y git
+          git clone --depth 1 --branch '${RepositoryBranch}' '${RepositoryUrl}' /opt/generative-ai-projects
+          cd '/opt/generative-ai-projects/${ProjectPath}'
+          bash deploy/aws/bootstrap.sh "$(pwd)"
+
+Outputs:
+  InstanceId:
+    Value: !Ref AtlasInstance
+  PublicUrl:
+    Value: !Sub http://${AtlasInstance.PublicDnsName}:8501
+  SessionManagerCommand:
+    Value: !Sub aws ssm start-session --target ${AtlasInstance}
